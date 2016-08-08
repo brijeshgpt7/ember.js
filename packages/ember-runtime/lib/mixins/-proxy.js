@@ -18,9 +18,14 @@ import {
   propertyDidChange
 } from 'ember-metal/property_events';
 import { bool } from 'ember-runtime/computed/computed_macros';
+import { POST_INIT } from 'ember-runtime/system/core_object';
 import { defineProperty } from 'ember-metal/properties';
 import { Mixin, observer } from 'ember-metal/mixin';
+import { tagFor } from 'ember-metal/tags';
 import symbol from 'ember-metal/symbol';
+import require, { has } from 'require';
+
+const hasGlimmer = has('glimmer-reference');
 
 const IS_PROXY = symbol('IS_PROXY');
 
@@ -48,8 +53,11 @@ function contentPropertyDidChange(content, contentKey) {
   @namespace Ember
   @private
 */
-export default Mixin.create({
-  [IS_PROXY]: true,
+const PROXY_MIXIN_PROPS = {
+  init() {
+    this._super(...arguments);
+    this[IS_PROXY] = true;
+  },
 
   /**
     The object whose properties will be forwarded.
@@ -60,6 +68,7 @@ export default Mixin.create({
     @private
   */
   content: null,
+
   _contentDidChange: observer('content', function() {
     assert('Can\'t set Proxy\'s content to itself', get(this, 'content') !== this);
   }),
@@ -111,4 +120,41 @@ export default Mixin.create({
     );
     return set(content, key, value);
   }
-});
+};
+
+if (hasGlimmer) {
+  let { CachedTag, DirtyableTag, UpdatableTag } = require('glimmer-reference');
+
+  class ProxyTag extends CachedTag {
+    constructor(proxy, content) {
+      super();
+      this.proxyWrapperTag = new DirtyableTag();
+      this.proxyContentTag = new UpdatableTag(tagFor(content));
+    }
+
+    compute() {
+      return Math.max(this.proxyWrapperTag.value(), this.proxyContentTag.value());
+    }
+
+    dirty() {
+      this.proxyWrapperTag.dirty();
+    }
+
+    contentDidChange(content) {
+      this.proxyContentTag.update(tagFor('content'));
+    }
+  }
+
+  PROXY_MIXIN_PROPS[POST_INIT] = function postInit() {
+    this._super();
+    meta(this)._tag = new ProxyTag(this, get(this, 'content'));
+  };
+
+  PROXY_MIXIN_PROPS._contentDidChange = observer('content', function() {
+    assert('Can\'t set Proxy\'s content to itself', get(this, 'content') !== this);
+    meta(this)._tag.contentDidChange(get(this, 'content'));
+  });
+}
+
+
+export default Mixin.create(PROXY_MIXIN_PROPS);
