@@ -141,7 +141,7 @@ if (hasGlimmer) {
     }
 
     contentDidChange(content) {
-      this.proxyContentTag.update(tagFor('content'));
+      this.proxyContentTag.update(tagFor(content));
     }
   }
 
